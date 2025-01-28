@@ -7,6 +7,6 @@ def check_orthonormality(decoder: hp.MultiVector, encoder : hp.MultiVector) -> N
     :param decoder: The decoder multivector
     :param encoder: The encoder multivector
     """
-    error = np.linalg.norm(encoder.dot_mv(decoder) - np.eye(decoder.nvec))
+    error = np.linalg.norm(encoder.dot_mv(decoder) - np.eye(decoder.nvec()))
     if error > 1.0e-5:
-        raise Exception("The decoder and encoder are not orthonormal (error = %f)" % error)
+        raise Exception("The decoder and encoder are not orthonormal (error = %f)." % error)

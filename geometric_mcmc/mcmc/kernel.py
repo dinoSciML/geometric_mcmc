@@ -4,11 +4,11 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from .sample_structure import SampleStruct, ReducedSampleStruct
-from .kernel_utilities import decomposeHessian
+from .kernel_utilities import decomposeGaussNewtonHessian
 from hippylib.modeling.variables import STATE, PARAMETER, ADJOINT
 from ..utilities.reduced_basis import check_orthonormality
 from ..model.pto_map import PtOMapJacobian
-from ..model.surrogate_wrapper import SurrogateModel
+from ..model.surrogate_wrapper import ReducedBasisSurrogate
 from scipy.linalg import eigh
 
 class Kernel(object):
@@ -83,20 +83,25 @@ class mMALAKernel(Kernel):
         self.model = model
         if not hasattr(self.model.misfit, "observable"):
             raise Exception("Please us the ObservableMisfit class.")
-        self.parameters = {}
-        self.parameters["h"] = 0.1
-        self.form_jacobian = form_jacobian
-        if not self.form_jacobian:
-            self.parameters["oversampling"] = 20
-        else:
-            self.mode = mode
+        
         self._noise = dl.Vector(self.model.prior.R.mpi_comm())
         self.model.prior.init_vector(self._noise, "noise")
         self._help1, self._help2 = dl.Vector(self.model.prior.R.mpi_comm()), dl.Vector(self.model.prior.R.mpi_comm())
         self.model.prior.init_vector(self._help1, 1)
         self.model.prior.init_vector(self._help2, 1)
-        self.pto_map_jac = PtOMapJacobian(self.model.problem, self.model.misfit.observable)
-        self._Rinv_operator = hp.Solver2Operator(self.model.prior.Rsolver)
+
+        self.parameters = {}
+        self.parameters["h"] = 0.1
+        self.parameters["oversampling"] = 20
+        self.form_jacobian = form_jacobian
+        if not self.form_jacobian:
+            self.parameters["hessian_rank"] = min(self.model.misfit.observable.dim(), self._help1.size())
+            self.parameters["gauss_newton_approximation"] = True
+        else:
+            self.mode = mode
+            self.parameters["hessian_rank"] = None # The rank of the Hessian approximation must be set by the user
+            self._Rinv_operator = hp.Solver2Operator(self.model.prior.Rsolver)
+            self.pto_map_jac = PtOMapJacobian(self.model.problem, self.model.misfit.observable)
 
     def name(self) -> str:
         """
@@ -120,7 +125,10 @@ class mMALAKernel(Kernel):
         """
         Generate a sample data structure
         """
-        return SampleStruct(self.model, self.derivativeInfo()) # we use a dl.Vector based state, parameter and adjoint
+        if self.form_jacobian:
+            return SampleStruct(self.model, self.derivativeInfo(), self.model.misfit.observable.dim())
+        else:
+            return SampleStruct(self.model, self.derivativeInfo(), self.parameters["hessian_rank"])
 
     def init_sample(self, s: SampleStruct) -> None:
         """
@@ -140,19 +148,17 @@ class mMALAKernel(Kernel):
             J.reduce(s.g, weighted_misfit_vector) # compute the gradient
             s.Cg.zero()
             Rinv_J.reduce(s.Cg, weighted_misfit_vector) # compute the preconditioned gradient
-            s.eigenvalues = decomposeHessian(J, Rinv_J, s.decoder, s.encoder, self._Rinv_operator, self.model.misfit.noise_precision) # compute the eigenvalues and eigenvectors
-            # plt.semilogy(s.eigenvalues)
-            # plt.show()
-            # s.decoder.export(self.model.problem.Vh[hp.PARAMETER], "sample_visual.xdmf", normalize=True)
-            # exit()
+            s.eigenvalues = decomposeGaussNewtonHessian(J, Rinv_J, s.decoder, s.encoder, self._Rinv_operator, self.model.misfit.noise_precision) # compute the eigenvalues and eigenvectors
         else: # use randomized eigendecomposition of the Hessian using a matrix free approach
             self.model.solveAdj(s.p, [s.u, s.m, s.p]) # solve the adjoint problem
-            self.model.setPointForHessianEvaluations([s.u, s.m, s.p], gauss_newton_approx=True) # set the point for Hessian evaluations
-            Hmisfit = hp.Reducedhessian(self.model, misfit_only=True) # compute the Hessian approximation
-            Omega = hp.MultiVector(s.m, self._rank + self.parameters["oversampling"]) # initialize the multivector
+            self.model.setPointForHessianEvaluations([s.u, s.m, s.p], gauss_newton_approx=self.parameters["Gauss_Newton_approximation"]) # set the point for Hessian evaluations
+            Hmisfit = hp.ReducedHessian(self.model, misfit_only=True) # compute the Hessian approximation
+            assert self.parameters["hessian_rank"] is not None, "The rank of the Hessian approximation must be set."
+            Omega = hp.MultiVector(s.m, self.parameters["hessian_rank"] + self.parameters["oversampling"]) # initialize the multivector
             hp.parRandom.normal(1., Omega)
-            s.eigenvalues, s.decoder = hp.doublePassG(Hmisfit, self.model.prior.R, self.prior.Rsolver, Omega, self._rank) # compute the eigenvalues and eigenvectors
-            hp.MatMvMult(self._Rinv_operator, s.decoder, s.encoder) # compute the encoder
+            s.decoder = None
+            s.eigenvalues, s.decoder = hp.doublePassG(Hmisfit, self.model.prior.R, self.model.prior.Rsolver, Omega, self.parameters["hessian_rank"]) # compute the eigenvalues and eigenvectors
+            hp.MatMvMult(self.model.prior.R, s.decoder, s.encoder) # compute the encoder
 
     def sample(self, current: SampleStruct, proposed: SampleStruct) -> None:
         """
@@ -327,8 +333,8 @@ class FixedmMALAKernel(Kernel):
         self.model.solveFwd(s.u, [s.u, s.m, None]) # solve the forward problem
         s.cost = self.model.cost([s.u, s.m, None])[2] # compute the misfit value
         self.model.solveAdj(s.p, [s.u, s.m, s.p]) # solve the adjoint problem
-        self.evalGradientParameter([s.u, s.m, s.g], s.g, misfit_only=True) # compute the gradient
-        self.prior.Rsolver.solve(s.Cg, s.g) # compute the preconditioned gradient
+        self.model.evalGradientParameter([s.u, s.m, s.p], s.g, misfit_only=True) # compute the gradient
+        self.model.prior.Rsolver.solve(s.Cg, s.g) # compute the preconditioned gradient
 
     def sample(self, current: SampleStruct, proposed: SampleStruct) -> None:
         """
@@ -397,7 +403,7 @@ class FixedmMALAKernel(Kernel):
         Vtg = self.decoder.dot_v(current.g)
         VtRm = self.encoder.dot_v(current.m)
         dplus1inv = 1. / (1.0 + self.eigenvalues)
-        current.decoder.reduce(out, dplus1inv * (self.eigenvalues * VtRm - Vtg))
+        self.decoder.reduce(out, dplus1inv * (self.eigenvalues * VtRm - Vtg))
 
     def density_wrt_pcn(self, origin: SampleStruct, destination: SampleStruct) -> list[float, ...]:
         """
@@ -434,18 +440,19 @@ class ReducedBasisSurrogatemMALAKernel(Kernel):
     """
         This class implement the reduced mMALA kernel, which uses DINO as a surrogate for everything, including the acceptance ratio.
     """
-    def __init__(self, surrogate: SurrogateModel, decoder: hp.MultiVector = None, encoder: hp.MultiVector = None) -> None:
+    def __init__(self, surrogate: ReducedBasisSurrogate, parameter_encoder: hp.MultiVector = None, parameter_decoder: hp.MultiVector =None) -> None:
         """
         Construction:
-        :param surrogate: The surrogate model with methods eval, evalGradientParameter and cost.
+        :param surrogate: The surrogate model with methods eval, cost, and misfit_vector
+        :param parameter_encoder: The encoder multivector. This is pass to the data structure to handle assignment of parameter between full and reduced spaces.
+        :param parameter_decoder: The decoder multivector. This is pass to the data structure to handle assignment of parameter between full and reduced spaces.
         """
         self.surrogate = surrogate
         self.parameters = {}
         self.parameters["h"] = 0.1
-        self.input_dim = surrogate.input_dim()
-        self.output_dim = surrogate.output_dim()
-        self.encoder = encoder
-        self.decoder = decoder
+        self.input_dim, self.output_dim = surrogate.dim()
+        self.parameter_encoder = parameter_encoder
+        self.parameter_decoder = parameter_decoder
         self.rank = min(self.output_dim, self.input_dim)  # dimension in the reduced space only
 
     def name(self):
@@ -471,24 +478,25 @@ class ReducedBasisSurrogatemMALAKernel(Kernel):
         Initialize the surrogate sample structure by computing the cost, gradient, eigenvalues and eigenbases.
         :param s: The surrogate sample structure
         """
-        s.u = self.surrogate.eval(s.m)
-        J = self.surrogate.jacobian(s.m)
-        s.cost = self.surrogate.cost([s.u, s.m])[2]
-        weighted_misfit_vector = self.surrogate.misfit_vector([s.u, s.m], True)
+        s.u, J = self.surrogate.eval(s.m, derivative_order=1)
+        s.cost = self.surrogate.cost(s.u, s.m)[2]
+        weighted_misfit_vector = self.surrogate.misfit_vector(s.u, True)
         s.g = J.T @ weighted_misfit_vector
         s.eigenvalues, s.rotation = eigh(J.T@self.surrogate.noise_precision@J)
-    
+        s.eigenvalues = s.eigenvalues[::-1]
+        s.rotation = s.rotation[:, ::-1]
+
     def generate_sample(self) -> ReducedSampleStruct:
         """
         Generate a surrogate sample data structure
         """
-        return ReducedSampleStruct(derivative_info=self.derivativeInfo(), encoder=self.encoder, decoder=self.decoder)
+        return ReducedSampleStruct(derivative_info=self.derivativeInfo(), encoder=self.parameter_encoder, decoder=self.parameter_decoder)
 
     def sample(self, current: ReducedSampleStruct, proposed: ReducedSampleStruct) -> None:
         """
         Generate a new proposal given the current sample
         """
-        proposed.mr = self.proposal(current)  # Coming up with a proposal step
+        proposed.m = self.proposal(current)  # Coming up with a proposal step
 
     def accept_or_reject(self, current: ReducedSampleStruct, proposed: ReducedSampleStruct) -> int:
         """
@@ -513,8 +521,8 @@ class ReducedBasisSurrogatemMALAKernel(Kernel):
         h = self.parameters["h"]
         rho = (4.0-h)/(4.0+h)
         noise = np.random.normal(scale=np.sqrt((1 - rho ** 2) / (current.eigenvalues + 1)), size=self.input_dim)
-        mean = (current.eigenvalues + rho) / (current.eigenvalues + 1) * current.rotation.T @ current.mr - \
-               (1.0 - rho) / (current.eigenvalues + 1) * current.rotation.T @ current.gr
+        mean = (current.eigenvalues + rho) / (current.eigenvalues + 1) * current.rotation.T @ current.m - \
+               (1.0 - rho) / (current.eigenvalues + 1) * current.rotation.T @ current.g
         return current.rotation @ (mean + noise)
 
     def acceptance_ratio(self, origin : ReducedSampleStruct, destination: ReducedSampleStruct) -> np.ndarray:
@@ -539,9 +547,9 @@ class ReducedBasisSurrogatemMALAKernel(Kernel):
         rho = (4.0-h)/(4.0+h)
         dplus1 = origin.eigenvalues + 1.0
         dplus1inv = 1. / dplus1
-        rotated_mr = origin.rotation.T @ origin.mr
-        rotated_gr = origin.rotation.T @ origin.gr
-        rotated_mhat = origin.rotation.T @ (destination.mr - rho * origin.mr) /math.sqrt(1.0-rho**2)
+        rotated_mr = origin.rotation.T @ origin.m
+        rotated_gr = origin.rotation.T @ origin.g
+        rotated_mhat = origin.rotation.T @ (destination.m - rho * origin.m) /math.sqrt(1.0-rho**2)
         rate = np.zeros(5)
         rate[0] = -0.125 * h * np.inner(dplus1inv * (origin.eigenvalues * rotated_mr - rotated_gr),
                                         origin.eigenvalues * rotated_mr - rotated_gr)
@@ -667,6 +675,9 @@ class DelayedAcceptanceKernel(pCNKernel):
     
     def name(self) -> str:
         return "Delayed Acceptance"
+    
+    def reduced(self) -> bool:
+        return False
 
     def sample(self, *args, **kwargs):
         pass
