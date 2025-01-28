@@ -99,7 +99,7 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
         tracer.parameters["visual_frequency"] = n_samples // 4
         tracer.parameters["save_frequency"] = n_samples // 4
 
-    # chain.run(m0, qoi=qoi, tracer=tracer) # Run the MCMC chain
+    chain.run(m0, qoi=qoi, tracer=tracer) # Run the MCMC chain
     time1 = time.time() # Stop the timer
 
     if comm_mesh.rank==0: print("Process %d Finished sampling with step size tuning in %.2f minutes" % (comm_sampler.rank, (time1-time0)/60)) # Print the time taken
