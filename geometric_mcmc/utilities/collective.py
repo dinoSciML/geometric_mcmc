@@ -40,7 +40,7 @@ def get_global(comm: MPI.Intracomm, vector: dl.Vector, root: int=None) -> np.nda
             array = np.concatenate(array)
     return array
 
-def set_global_mv(comm: MPI.Intracomm, array: np.ndarray, mv: hp.Multivector) -> None:
+def set_global_mv(comm: MPI.Intracomm, array: np.ndarray, mv: hp.MultiVector) -> None:
     """
     Globally set a hp.Multivector from a numpy array.
     :param comm: The MPI communicator

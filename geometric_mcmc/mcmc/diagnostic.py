@@ -47,11 +47,9 @@ def SingleChainESS(samples):
     :param samples: The samples of the Markov chain. Has shape (n_samples, n_parameters)
     :return: The effective sample size of size (n_parameters,)
     """
-    print(samples.shape)
     for ii in range(samples.shape[1]):
         if ii == 0:
             temp = autocorrelation(samples[:, ii])
-            print(temp.shape)
             ntime = temp.size
             acorr = np.zeros((samples.shape[1], ntime))
             acorr[0, :] = temp

@@ -1,10 +1,11 @@
 import numpy as np
-import os, sys
+import os
 import dolfin as dl
 import hippylib as hp
 import time
 import h5py
 import warnings
+import pickle
 from hippylib.modeling.variables import PARAMETER
 from .tracer import FullTracer, ReducedTracer
 from .chain import MCMC, MultiLevelDelayedAcceptanceMCMC
@@ -16,9 +17,10 @@ def find_first_valley(arr):
     :param arr: The array
     :return: The index of the first non-positive element
     """
-    arr = np.diff(arr)
-    out = np.where(np.diff(arr) <= 0.0)[0]
-    return out[0] + 1 if out.size > 0 else 1
+    if isinstance(arr, list):
+        arr = np.array(arr)
+    out = np.where(np.diff(arr) >= 0.0)[0]
+    return out[0]+1 if out.size > 0 else arr.size
 
 def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_path, 
                      m0 = None, n_burn_in = None, qoi = None):
@@ -35,102 +37,114 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
     :param qoi: The quantity of interest object.
     :return: The tuned step size
     """
-    time0 = time.time()
+    time0 = time.time() # Start the timer
 
-    if isinstance(step_sizes, list):
-        step_sizes = np.array(step_sizes)
-    if step_sizes.ndim == 1:
+    comm_mesh = model.prior.R.mpi_comm() # Get the MPI communicator for the mesh
+    io_rank = comm_mesh.rank + comm_sampler.rank # The rank for printing and saving
+
+    # Check the step size input: must be non-decreasing order (if multilevel with level > 2, then non-decreasing in each level)
+    if isinstance(step_sizes, list): # Convert list to numpy array
+        step_sizes = np.array(step_sizes) 
+    if step_sizes.ndim == 1: # Convert 1D array to 2D array
         step_sizes = np.expand_dims(step_sizes, axis=0)
-    if isinstance(kernel, list) and step_sizes.shape[0] != len(kernel)-1:
+    if isinstance(kernel, list) and step_sizes.shape[0] != len(kernel)-1: # Check the number of rows in step sizes
         raise ValueError("For multilevel delayed acceptance scheme, the number of rows in step sizes should be the same as the number of kernels minus one." +
                          "Got {0} step sizes and {1} kernels".format(step_sizes.shape[0], len(kernel)))
     assert comm_sampler.size == step_sizes.shape[1], "The number of processors should be the same as the number of step sizes"
     assert np.all(np.diff(step_sizes, axis=1) >= 0), "The step sizes should be in non-decreasing order. For multilevel schemes with more than 2 leveles, each level should have non-decreasing step sizes."
 
-    if comm_sampler.rank == 0: np.save(output_path + "step_sizes.npy", step_sizes)
+    if io_rank == 0: np.save(output_path + "step_sizes.npy", step_sizes) # Save the step sizes to the output path
+   
+    # Add additional folders in the output path and save mcmc data there
+    if comm_mesh.rank == 0 and not os.path.exists(output_path + "size_%d/"%(comm_sampler.rank)): # Create the output path if it does not exist at the zero mesh rank
+        os.makedirs(output_path + "size_%d/"%(comm_sampler.rank), exist_ok=True) 
 
-    output_path += "size_%d/"%(comm_sampler.rank)
-    if not os.path.exists(output_path):
-        os.makedirs(output_path, exist_ok=True)
-
-    if n_burn_in is None: 
+    if n_burn_in is None: # Set the burn-in period if not given
         n_burn_in = n_samples // 2
         warnings.warn("Burn-in period is not set. Using half of the total number of samples as the burn-in period")
-
-    comm_mesh = model.prior.R.mpi_comm()
     
-    if isinstance(kernel, list):
+    if isinstance(kernel, list): # Check if the kernel is a list, i.e., multilevel delayed acceptance scheme
         for ii, ker in range(kernel[:-1]):
-            ker[ii].parameters["h"] = step_sizes[ii, comm_sampler.rank]
-        flag_reduced = kernel[-1].reduced()
-        chain = MultiLevelDelayedAcceptanceMCMC(kernel)
+            ker[ii].parameters["h"] = step_sizes[ii, comm_sampler.rank] # Set the step size for each level
+        flag_reduced = kernel[-1].reduced() # Check if the last kernel is a reduced kernel with numpy data structure
+        chain = MultiLevelDelayedAcceptanceMCMC(kernel) # Create the multilevel delayed acceptance MCMC object
     else:
-        kernel.parameters["h"] = step_sizes[0, comm_sampler.rank]
-        flag_reduced = kernel.reduced()
-        chain = MCMC(kernel)
+        kernel.parameters["h"] = step_sizes[0, comm_sampler.rank] # Set the step size for the kernel
+        flag_reduced = kernel.reduced() # Check if the kernel is a reduced kernel with numpy data structure
+        chain = MCMC(kernel) # Create the MCMC object
 
     chain.parameters["number_of_samples"] = n_samples  # The total number of samples
     chain.parameters["print_progress"] = 20  # The number of time to print to screen
-    chain.parameters["print_level"] = -1
+    chain.parameters["print_level"] = -1 # The level to print to screen, -1 means no print
 
-    noise = dl.Vector(comm_mesh)
-    model.prior.init_vector(noise, "noise")
+    noise = dl.Vector(comm_mesh) # Create a dolfin vector for the noise
+    model.prior.init_vector(noise, "noise") # Initialize the noise vector
 
-    for ii in range(comm_sampler.rank):
+    for ii in range(comm_sampler.rank): # Consumes random samples for the given sampler rank
         chain.consume_random()
         if m0 is None: hp.parRandom.normal(1., noise)
 
-    if m0 is None:
+    if m0 is None: # Generate a random prior sample if the initial parameter is not given
         m0 = dl.Vector(comm_mesh)
         model.prior.init_vector(m0, 0)
         hp.parRandom.normal(1., noise)
         model.prior.sample(noise, m0)
 
-    if flag_reduced:
-        tracer = ReducedTracer(model.problem.Vh[PARAMETER], output_path=output_path)
-        tracer.parameters["visual_frequency"] = n_samples // 5
-        tracer.parameters["save_frequency"] = n_samples // 5
-    else:
-        tracer = FullTracer(model.problem.Vh[PARAMETER], output_path=output_path)
-        tracer.parameters["visual_frequency"] = n_samples // 5
-        tracer.parameters["save_frequency"] = n_samples // 5
+    if flag_reduced: # Check if the kernel is a reduced kernel with numpy data structure
+        tracer = ReducedTracer(model.problem.Vh[PARAMETER], output_path=output_path + "size_%d/"%(comm_sampler.rank))
+        tracer.parameters["visual_frequency"] = n_samples // 4
+        tracer.parameters["save_frequency"] = n_samples // 4
+    else: # Create a full tracer object
+        tracer = FullTracer(model.problem.Vh[PARAMETER], output_path=output_path + "size_%d/"%(comm_sampler.rank))
+        tracer.parameters["visual_frequency"] = n_samples // 4
+        tracer.parameters["save_frequency"] = n_samples // 4
 
-    chain.run(m0, qoi=qoi, tracer=tracer)
-    time1 = time.time()
+    # chain.run(m0, qoi=qoi, tracer=tracer) # Run the MCMC chain
+    time1 = time.time() # Stop the timer
 
-    print("Process %d Finished sampling with step size tuning in %.2f minutes" % (comm_sampler.rank, (time1-time0)/60))
-    sys.stdout.flush()
+    if comm_mesh.rank==0: print("Process %d Finished sampling with step size tuning in %.2f minutes" % (comm_sampler.rank, (time1-time0)/60)) # Print the time taken
 
-    with h5py.File(output_path + "mcmc_data.hdf5", "r") as f:
+    with h5py.File(output_path + "size_%d/"%(comm_sampler.rank) + "mcmc_data.hdf5", "r") as f: # Load the MCMC data
         n_samples = f.attrs["n_samples"]
         accept = f["accept"][:]
         samples = f["parameter"][:]
         jump = f["jump"][1:]
 
-    if isinstance(kernel, list):
-        accept_rate = np.mean(np.min(np.abs(accept[n_burn_in:]), axis=1))
-    else:
-        accept_rate = np.mean(accept[n_burn_in:])
-
+    # Compute the acceptance rate. Note that multilevel delayed acceptance scheme has multiple acceptance rates and need to be treated differently
+    accept_rate = np.mean(np.min(np.abs(accept[n_burn_in:]), axis=1)) if isinstance(kernel, list) else np.mean(accept[n_burn_in:])
+    
+    # Compute the mean square jump and the effective sample size
     mean_square_jump = np.mean(jump[n_burn_in:]**2)
     ess = SingleChainESS(samples[n_burn_in:, :])
 
-    accept_rate = comm_sampler.gather(accept_rate, root=0)
-    mean_square_jump = comm_sampler.gather(mean_square_jump, root=0)
-    ess_median = comm_sampler.gather(np.median(ess), root=0)
+    # Gather the data from all processors
+    accept_rate = np.array(comm_sampler.gather(accept_rate, root=0))
+    mean_square_jump = np.array(comm_sampler.gather(mean_square_jump, root=0))
+    ess_median = np.array(comm_sampler.gather(np.median(ess), root=0))
+
+    # Compute the optimal step size on the root sampler processor
     if comm_sampler.rank == 0:
-        print("accept_rate: ", accept_rate)
-        print("mean_square_jump: ", mean_square_jump)
-        print("ess_median: ", ess_median)
-        print("step_sizes: ", step_sizes)
-        idx = find_first_valley(accept_rate)
-        print("truncation idx: ", idx)
+        # Finding the first entry with either an increase in acceptance rate or a decrease in mean square jump or a decrease in ESS
+        idx = min([find_first_valley(accept_rate), find_first_valley(-mean_square_jump), find_first_valley(-ess_median)])
+        # Finding the optimal step size index
         msj_idx = np.argmax(mean_square_jump[:idx])
-        print("max mean square jump idx: ", msj_idx)
         ess_idx = np.argmax(ess_median[:idx])
-        print("max ess idx: ", ess_idx)
-        if msj_idx == ess_idx:
-            return step_sizes[msj_idx, :]
-        else:
-            idx_out = (msj_idx + ess_idx) // 2
-            return step_sizes[idx_out, :]
+        optimal_idx = (msj_idx + ess_idx) // 2 # We take the averge of the two indices (very heristic)
+        tuned_step_size = step_sizes[:, optimal_idx] # The tuned step size
+        
+        tuning_results = {} # Save the tuning results in a dictionary
+        tuning_results["step_sizes_tested"] = step_sizes
+        tuning_results["n_samples"] = n_samples
+        tuning_results["n_burn_in"] = n_burn_in
+        tuning_results["accept_rate"] = accept_rate
+        tuning_results["mean_square_jump"] = mean_square_jump
+        tuning_results["median_of_ESS_percentage"] = ess_median
+        tuning_results["tuned_step_size"] = tuned_step_size
+        tuning_results["index"] = optimal_idx
+        
+        if io_rank == 0: # Save the tuning results
+            with open(output_path + "tuning_results.pkl", "wb") as f:
+                pickle.dump(tuning_results, f)
+    else:
+        tuned_step_size = None
+    return comm_sampler.bcast(tuned_step_size, root=0) # Broadcast the tuned step size to all processors and return
