@@ -121,7 +121,7 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
         
         # Compute the mean square jump and the effective sample size
         mean_square_jump = np.mean(jump[n_burn_in:]**2)
-        ess = SingleChainESS(samples[n_burn_in:, :])*(n_samples-n_burn_in)/(time1-time0)
+        ess = SingleChainESS(samples[n_burn_in:, :])
 
         # Gather the data from all processors
         accept_rate = np.array(comm_sampler.gather(accept_rate, root=0))
@@ -142,7 +142,7 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
             tuning_results["n_burn_in"] = n_burn_in
             tuning_results["accept_rate"] = accept_rate[:step_sizes.shape[1]]
             tuning_results["mean_square_jump"] = mean_square_jump[:step_sizes.shape[1]]
-            tuning_results["median_ESS_per_seconds"] = ess_median[:step_sizes.shape[1]]
+            tuning_results["median_ESS_percentage"] = ess_median[:step_sizes.shape[1]]
             tuning_results["tuned_step_size"] = tuned_step_size
             tuning_results["index"] = ess_idx
             

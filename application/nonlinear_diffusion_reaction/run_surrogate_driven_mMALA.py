@@ -30,7 +30,7 @@ if __name__ == "__main__":
     settings["n_subdomains"] = 1
     settings["tune_step_size"] = 1
     settings["step_size_tuning"]["step_size_max"] = 0.05
-    settings["step_size_tuning"]["step_size_min"] = 0.005
+    settings["step_size_tuning"]["step_size_min"] = 0.001
     settings["step_size_tuning"]["n_samples"] = 2000
     settings["step_size_tuning"]["n_burn_in"] = 1000
     settings["step_size"] = 0.1
@@ -38,12 +38,15 @@ if __name__ == "__main__":
     settings["output_path"] = "./DA-DINO-mMALA_results/"
     settings["surrogate"]["model_file"] = "./training_result/surrogate.pt"
     settings["surrogate"]["data_file"] = "./training_result/surrogate_results.pkl"
+    settings["verbose"] = 0
     settings["qoi_index"] = [0, -1]
 
     comm_mesh, comm_sampler = gmc.split_mpi_comm(MPI.COMM_WORLD, settings["n_subdomains"], MPI.COMM_WORLD.size//settings["n_subdomains"])
 
     model_settings = nonlinear_diffusion_reaction_settings()
     model_settings["output_path"] = settings["output_path"]
+    model_settings["save_setup"] = False
+    model_settings["verbose"] = False
 
     model, _ = nonlinear_diffusion_reaction_model(comm_mesh, model_settings)
 

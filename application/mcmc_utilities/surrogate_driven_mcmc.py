@@ -27,6 +27,7 @@ def surrogate_driven_mcmc_settings(settings = {}):
     settings["surrogate"] = {}
     settings["surrogate"]["model_file"] = "./training_result/surrogate.pt"
     settings["surrogate"]["data_file"] = "./training_result/surrogate_results.pkl"
+    settings["verbose"] = 0
     settings["qoi_index"] = [0, -1]
     return settings
 
