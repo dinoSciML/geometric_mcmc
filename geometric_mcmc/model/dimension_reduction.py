@@ -40,19 +40,21 @@ class ExpectedGaussNewtonHessian:
 
 
 def compute_DIS_from_samples(model: hp.Model, jacobian_samples: list[hp.MultiVector,...],
-                              input_rank: int, output_rank: int, 
-                              oversampling: int=20) -> tuple[np.ndarray, hp.MultiVector, hp.MultiVector]:
+                              input_rank: int, output_rank: int = None, 
+                              oversampling: int=20) -> tuple:
     """
     Compute the derivative-informed subspace from samples of the Jacobian matrix
     :param model: The hippylib model class with ObservableMisfit
     :param jacobian_samples: The list of Jacobian samples
     :param input_rank: The rank of the input dimension reduction
-    :param output_rank: The rank of the output dimension reduction
-    return (input_eigenvalues, input_decoder, input_encoder), (output_eigenvalues, output_decoder, output_encoder)
+    :param output_rank: The rank of the output dimension reduction. If not provided, only the input dimension reduction is computed
+    return if output_rank is not provided: (input_eigenvalues, input_decoder, input_encoder), (output_eigenvalues, output_decoder, output_encoder)
+           if output_rank is provided: (input_eigenvalues, input_decoder, input_encoder)
     """
     # Check the input and output ranks
     assert input_rank <= jacobian_samples[0][0].size()
-    assert output_rank <= jacobian_samples[0].nvec()
+    if output_rank is not None:
+        assert output_rank <= jacobian_samples[0].nvec()
 
     n_samples = len(jacobian_samples) # The number of samples
     prior = model.prior # The prior
@@ -67,25 +69,28 @@ def compute_DIS_from_samples(model: hp.Model, jacobian_samples: list[hp.MultiVec
     hp.MatMvMult(prior.R, input_decoder, input_encoder) # Compute the encoder
     check_orthonormality(input_decoder, input_encoder) # Check the orthonormality of the basis
 
-    # Compute the eigendecomposition of the inside out Gauss--Newton Hessian using scipy generalized eigensolver
-    Rinv_jacobian_samples = [hp.MultiVector(jacobian[0], jacobian.nvec()) for jacobian in jacobian_samples] # Initialize the prior-preconditioned Jacobian samples
-    Rinv_operator = hp.Solver2Operator(prior.Rsolver) # Initialize the prior-preconditioned operator
-    for ii, jacobian in enumerate(jacobian_samples): # Compute the prior-preconditioned Jacobian samples
-        hp.MatMvMult(Rinv_operator, jacobian, Rinv_jacobian_samples[ii])
-    JCJt = [jacobian.dot_mv(R_inv_jacobian) for jacobian, R_inv_jacobian in zip(jacobian_samples, Rinv_jacobian_samples)] # Compute the prior-preconditioned inside out Gauss--Newton Hessian
-    expected_mat = sum([1./n_samples*noise_precision@mat@noise_precision for mat in JCJt]) # Pad the Gauss--Newton Hessian on the left and right with noise precision
-    output_eigenvalues, output_decoder = eigh(expected_mat, b=noise_precision) # Solve the generalized eigenvalue problem
-    output_eigenvalues = output_eigenvalues[::-1] # Reverse the eigenvalues, descending order
-    output_decoder = output_decoder[:, ::-1] # Reverse the eigenvectors too
-    output_decoder = output_decoder[:, :output_rank] # Truncate the eigenvectors
-    output_encoder = output_decoder.T@noise_precision # Compute the encoder
-    assert  np.allclose(output_encoder@output_decoder, np.eye(output_rank)) # Check the orthonormality of the basis
+    if output_rank is None:
+        return (input_eigenvalues, input_decoder, input_encoder)
+    else:
+        # Compute the eigendecomposition of the inside out Gauss--Newton Hessian using scipy generalized eigensolver
+        Rinv_jacobian_samples = [hp.MultiVector(jacobian[0], jacobian.nvec()) for jacobian in jacobian_samples] # Initialize the prior-preconditioned Jacobian samples
+        Rinv_operator = hp.Solver2Operator(prior.Rsolver) # Initialize the prior-preconditioned operator
+        for ii, jacobian in enumerate(jacobian_samples): # Compute the prior-preconditioned Jacobian samples
+            hp.MatMvMult(Rinv_operator, jacobian, Rinv_jacobian_samples[ii])
+        JCJt = [jacobian.dot_mv(R_inv_jacobian) for jacobian, R_inv_jacobian in zip(jacobian_samples, Rinv_jacobian_samples)] # Compute the prior-preconditioned inside out Gauss--Newton Hessian
+        expected_mat = sum([1./n_samples*noise_precision@mat@noise_precision for mat in JCJt]) # Pad the Gauss--Newton Hessian on the left and right with noise precision
+        output_eigenvalues, output_decoder = eigh(expected_mat, b=noise_precision) # Solve the generalized eigenvalue problem
+        output_eigenvalues = output_eigenvalues[::-1] # Reverse the eigenvalues, descending order
+        output_decoder = output_decoder[:, ::-1] # Reverse the eigenvectors too
+        output_decoder = output_decoder[:, :output_rank] # Truncate the eigenvectors
+        output_encoder = output_decoder.T@noise_precision # Compute the encoder
+        assert  np.allclose(output_encoder@output_decoder, np.eye(output_rank)) # Check the orthonormality of the basis
 
-    return (input_eigenvalues, input_decoder, input_encoder), (output_eigenvalues[:output_rank], output_decoder, output_encoder)
+        return (input_eigenvalues, input_decoder, input_encoder), (output_eigenvalues[:output_rank], output_decoder, output_encoder)
 
-def compute_DIS(model:hp.Model, n_samples:int, input_rank:int, output_rank: int, 
-                burn_in: int=0, oversampling: int=20, mode: str="reverse",
-                return_observables: bool = False) -> tuple[np.ndarray, hp.MultiVector, hp.MultiVector]:
+def compute_DIS(model:hp.Model, n_samples:int, input_rank:int, output_rank: int = None, 
+                oversampling: int=20, mode: str="reverse",
+                return_observables: bool = False) -> tuple:
     """
     Compute the derivative-informed subspace
     :param comm_sampler: The MPI communicator for the sampler
@@ -93,11 +98,18 @@ def compute_DIS(model:hp.Model, n_samples:int, input_rank:int, output_rank: int,
     :param n_samples: The number of samples for subspace estimation
     :param input_rank: The rank of the input dimension reduction
     :param output_rank: The rank of the output dimension reduction
-    :param burn_in: The number of burn-in samples
     :param oversampling: The oversampling factor for the randomized eigensolver
     :param mode: The mode of the Jacobian computation, must be either "forward" or "reverse"
     :param return_observables: Whether to return the observable samples
-    return (input_eigenvalues, input_decoder, input_encoder), (output_eigenvalues, output_decoder, output_encoder)
+    return One of the four scenarios depends on whether output_rank is provided and return_observables: 
+           1. A tuple if output_rank is None and return_observables is False
+           (input_eigenvalues, input_decoder, input_encoder) 
+           2. A tuple and an numpy array if output_rank is None and return_observables is True
+           (input_eigenvalues, input_decoder, input_encoder), observables 
+           3. Two tuples if output_rank is not None and return_observables is False
+           (input_eigenvalues, input_decoder, input_encoder), (output_eigenvalues, output_decoder, output_encoder)          
+           4. Two tuples and a numpy array if output_rank is not None and return_observables is True
+           (input_eigenvalues, input_decoder, input_encoder), (output_eigenvalues, output_decoder, output_encoder), observables 
     """
     pto_map = PtOMapJacobian(model.problem, model.misfit.observable) # initialize the parmeter-to-observable map
     x = model.generate_vector() # The state, parameter, and adjoint tuple
@@ -105,8 +117,6 @@ def compute_DIS(model:hp.Model, n_samples:int, input_rank:int, output_rank: int,
     model.prior.init_vector(noise, "noise") # Initialize the noise vector
     jacobian_samples = [] # The list of Jacobian samples
     if return_observables: observables = []
-    for ii in range(burn_in): # Burn-in samples
-        hp.parRandom.normal(1.0, noise)
     for ii in range(n_samples): # Generate the samples
         hp.parRandom.normal(1.0, noise) # Generate the noise
         model.prior.sample(noise, x[hp.PARAMETER]) # Sample the parameter
@@ -114,13 +124,18 @@ def compute_DIS(model:hp.Model, n_samples:int, input_rank:int, output_rank: int,
         if return_observables: observables.append(model.misfit.observable.eval(x))
         pto_map.setLinearizationPoint(x) # Set the linearization point
         jacobian_samples.append(pto_map.generate_jacobian()) # Generate a empty Jacobian
-        pto_map.eval(jacobian_samples[-1], "reverse") # Compute the Jacobian at the linearization point
-    
-    input_res, output_res = compute_DIS_from_samples(model, jacobian_samples, input_rank, output_rank, oversampling) # Compute the derivative-informed subspace from the generated samples
-    if return_observables:
-        return input_res, output_res, np.vstack(observables)
+        pto_map.eval(jacobian_samples[-1], mode=mode) # Compute the Jacobian at the linearization point
+    if output_rank is None:
+        input_res = compute_DIS_from_samples(model, jacobian_samples, input_rank, None, oversampling)
     else:
-        return input_res, output_res
+        input_res, output_res = compute_DIS_from_samples(model, jacobian_samples, input_rank, output_rank, oversampling) # Compute the derivative-informed subspace from the generated samples
+
+    out = [input_res]
+    if output_rank is not None:
+        out.append(output_res)
+    if return_observables:
+        out.append(np.vstack(observables))
+    return tuple(out) if len(out) > 1 else out[0]
     
 def compute_KLE(prior: hp.prior, rank: int) -> tuple[np.ndarray, hp.MultiVector, hp.MultiVector]:
     """
@@ -134,6 +149,7 @@ def compute_KLE(prior: hp.prior, rank: int) -> tuple[np.ndarray, hp.MultiVector,
     eigenvalues, decoder = kle_constructor.compute_kle_subspace(rank) # Compute the KLE subspace
     encoder = hp.MultiVector(decoder[0], decoder.nvec()) # Initialize the encoder
     hp.MatMvMult(prior.R, decoder, encoder) # Compute the encoder
+    check_orthonormality(decoder, encoder) # Check the orthonormality of the basis
 
     return eigenvalues, decoder, encoder
 

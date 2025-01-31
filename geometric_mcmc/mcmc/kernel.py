@@ -82,7 +82,7 @@ class mMALAKernel(Kernel):
         """
         self.model = model
         if not hasattr(self.model.misfit, "observable"):
-            raise Exception("Please us the ObservableMisfit class.")
+            raise Exception("Please use the ObservableMisfit class.")
         
         self._noise = dl.Vector(self.model.prior.R.mpi_comm())
         self.model.prior.init_vector(self._noise, "noise")
@@ -166,7 +166,7 @@ class mMALAKernel(Kernel):
         :param current: The current sample
         :param proposed: The proposed sample
         """
-        proposed.m = self.proposal(current)  # Coming up with a proposal step
+        self.proposal(current, proposed.m)  # Coming up with a proposal step
 
     def accept_or_reject(self, current: SampleStruct, proposed: SampleStruct) -> int:
         """
@@ -183,10 +183,11 @@ class mMALAKernel(Kernel):
         else:
             return 0
 
-    def proposal(self, current: SampleStruct) -> dl.Vector:
+    def proposal(self, current: SampleStruct, out: dl.Vector) -> None:
         """
         Compute the proposal step given the current sample
         :param current: The current sample
+        :param out: The output vector, i.e., the proposed sample
         """
         h = self.parameters["h"] # step size
         rho = (4.0-h)/(4.0+h) # the scaling factor
@@ -202,10 +203,12 @@ class mMALAKernel(Kernel):
         s_post.zero()
         current.decoder.reduce(s_post, invsqrt1plusdmin1 * VtRs)  # decode the prior samples
         s_post.axpy(1., s_prior)
-        self.compute_local_gradient(self._help1, current)  # compute the local gradient vector
+        self.compute_local_gradient(current, self._help1)  # compute the local gradient vector
         # Compute the proposed sample!
-        d_gam = rho * current.m + (1.0 - rho) * self._help1 + math.sqrt(1.0 - rho ** 2) * s_post
-        return d_gam
+        out.zero()
+        out.axpy(rho, current.m)
+        out.axpy(1.0 - rho, self._help1)
+        out.axpy(math.sqrt(1.0 - rho ** 2), s_post)
 
     def acceptance_ratio(self, origin: SampleStruct, destination: SampleStruct) -> list[float, ...]:
         """
@@ -218,11 +221,11 @@ class mMALAKernel(Kernel):
         rate[-1] = -origin.cost  # log transition rate
         return rate
 
-    def compute_local_gradient(self, out: dl.Vector, current: SampleStruct) -> None:
+    def compute_local_gradient(self, current: SampleStruct, out: dl.Vector) -> None:
         """
         Compute the local gradient given the current sample
-        :param out: The output vector
         :param current: The current sample
+        :param out: The output vector
         """
         out.zero()
         out.axpy(-1., current.Cg)
@@ -277,7 +280,7 @@ class FixedmMALAKernel(Kernel):
         This class implement the kernel class of Reimannian manifold MALA with a fixed metric tensor. This is the infinite-dimensional preconditioned MALA.
     """
 
-    def __init__(self, model: hp.Model, eigenvalues: np.ndarray, decoder: hp.MultiVector) -> None:
+    def __init__(self, model: hp.Model, eigenvalues: np.ndarray, decoder: hp.MultiVector, encoder : hp.MultiVector = None) -> None:
         """
         Construction:
         :param model: The model class for bayesian inverse problems
@@ -295,9 +298,11 @@ class FixedmMALAKernel(Kernel):
         self.model.prior.init_vector(self._help1, 1)
         self.model.prior.init_vector(self._help2, 1)
 
-        Rinv_operator = hp.Solver2Operator(self.model.prior.Rsolver)
-        self.decoder = hp.MultiVector(self.model.prior.R.mpi_comm(), self.encoder.nvec())
-        hp.MatMvMult(Rinv_operator, self.encoder, self.decoder)
+        if encoder is None:
+            self.encoder = hp.MultiVector(self.model.prior.R.mpi_comm(), self.decoder.nvec())
+            hp.MatMvMult(self.model.prior.Rsolver, self.decoder, self.encoder)
+        else:
+            self.encoder = encoder
         check_orthonormality(self.decoder, self.encoder)
 
     def name(self) -> str:
@@ -340,7 +345,7 @@ class FixedmMALAKernel(Kernel):
         """
         Sample a new proposal given the current sample
         """
-        proposed.m = self.proposal(current)  # Coming up with a proposal step
+        self.proposal(current, proposed.m)  # Coming up with a proposal step
 
     def accept_or_reject(self, current: SampleStruct, proposed: SampleStruct) -> int:
         """
@@ -357,11 +362,11 @@ class FixedmMALAKernel(Kernel):
         else:
             return 0
 
-    def proposal(self, current: SampleStruct) -> dl.Vector:
+    def proposal(self, current: SampleStruct, out: dl.Vector) -> None:
         """
         Compute the proposal step given the current sample
         :param current: The current sample
-        return: The proposed sample
+        :param out: The output vector, i.e., the proposed sample
         """
         h = self.parameters["h"] # step size
         rho = (4.0-h)/(4.0+h) # the scaling factor
@@ -377,10 +382,12 @@ class FixedmMALAKernel(Kernel):
         s_post.zero()
         self.decoder.reduce(s_post, invsqrt1plusdmin1 * VtRs)  # decode the posterior component
         s_post.axpy(1., s_prior)
-        self.compute_local_gradient(self._help1, current)  # compute local gradient in help1
+        self.compute_local_gradient(current, self._help1)  # compute local gradient in help1
         # Compute the proposed sample!
-        d_gam = rho * current.m + (1.0 - rho) * self._help1 + math.sqrt(1.0 - rho ** 2) * s_post
-        return d_gam
+        out.zero()
+        out.axpy(rho, current.m)
+        out.axpy(1.0 - rho, self._help1)
+        out.axpy(math.sqrt(1.0 - rho ** 2), s_post)
 
     def acceptance_ratio(self, origin: SampleStruct, destination: SampleStruct) -> list[float, ...]:
         """
@@ -393,11 +400,11 @@ class FixedmMALAKernel(Kernel):
         rate[-1] = -origin.cost  # log transition rate
         return rate
 
-    def compute_local_gradient(self, out: dl.Vector, current: SampleStruct) -> None:
+    def compute_local_gradient(self, current: SampleStruct, out: dl.Vector) -> None:
         """
         Compute the local gradient given the current sample
-        :param out: The output vector
         :param current: The current sample
+        :param out: The output vector
         """
         out.zero()
         Vtg = self.decoder.dot_v(current.g)
@@ -593,7 +600,7 @@ class pCNKernel(hp.pCNKernel):
         self.parameters["s"] = 4*math.sqrt(h)/(4.0+h)
         proposed.m = self.proposal(current)
 
-    def accept_reject(self, current: SampleStruct, proposed: SampleStruct) -> int:
+    def accept_or_reject(self, current: SampleStruct, proposed: SampleStruct) -> int:
         al = -proposed.cost + current.cost
         if (al > math.log(np.random.rand())):
             return 1
@@ -625,7 +632,7 @@ class MALAKernel(hp.MALAKernel):
         self.parameters["delta_t"] = 2.0*h
         proposed.m = self.proposal(current)
 
-    def accept_reject(self, current: SampleStruct, proposed: SampleStruct) -> int:
+    def accept_or_reject(self, current: SampleStruct, proposed: SampleStruct) -> int:
         rho_mp = self.acceptance_ratio(current, proposed)
         rho_pm = self.acceptance_ratio(proposed, current)
         al = rho_mp - rho_pm
@@ -638,8 +645,9 @@ class gpCNKernel(hp.gpCNKernel):
     """
     This class implements the generalized preconditioned Crank--Nicolson algorithm inherited from the hippylib implementation.
     """
-    def __init__(self, model: hp.Model, eigenvalues: np.ndarray, decoder: hp.MultiVector) -> None:
-        super(gpCNKernel, self).__init__(model, hp.GaussianLRPosterior(eigenvalues, decoder))
+    def __init__(self, model: hp.Model, nu) -> None:
+
+        super(gpCNKernel, self).__init__(model, nu)
         self.parameters["h"] = 0.1
     
     def name(self) -> str:

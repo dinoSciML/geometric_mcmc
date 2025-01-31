@@ -90,7 +90,6 @@ if __name__ == "__main__":
     hp.parRandom.normal(1., noise)
     LA_posterior.sample(noise, m_prior, m0)
 
-
     kernel = gmc.mMALAKernel(model, form_jacobian=True)
 
     index = np.arange(model.misfit.data.size)[::5]
@@ -99,6 +98,5 @@ if __name__ == "__main__":
     tuned_step_size = gmc.step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_path, 
                          m0=m0, n_burn_in = n_samples//2, qoi = qoi)
     
-    print(comm_sampler.rank, tuned_step_size)
-
-    if comm_sampler.rank == 0: np.save(output_path + "tuned_step_size.npy", tuned_step_size)
+    print("Step size tuning is done. The tuned step size is ", tuned_step_size)
+    print("See `tuning_results.pkl` for the tuning results.")

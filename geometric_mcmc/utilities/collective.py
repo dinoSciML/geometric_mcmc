@@ -62,7 +62,7 @@ def get_global_mv(comm: MPI.Intracomm, mv: hp.MultiVector, root: int=None) -> np
     """
     out = []
     for ii in range(mv.nvec()):
-        out.append(get_global(comm, mv[ii]), root=root)
+        out.append(get_global(comm, mv[ii], root=root))
     return np.stack(out)
 
 def split_mpi_comm(comm: MPI.Intracomm, size_1: int, size_2: int) -> tuple[MPI.Intracomm, MPI.Intracomm]:
@@ -88,7 +88,7 @@ def get_vertex_order(Vh: dl.FunctionSpace, root: int=None) -> tuple[np.ndarray, 
     :return: The vertex order
     """
     comm = Vh.mesh().mpi_comm()
-    assert Vh.num_sub_spaces() == 1, "Cannot handle mixed space."
+    assert Vh.num_sub_spaces() == 0, "Cannot handle mixed space."
     size = comm.size
     if size == 1:
         to_dof = dl.dof_to_vertex_map(Vh)

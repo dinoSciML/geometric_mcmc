@@ -71,6 +71,13 @@ class ObservableMisfit(hp.Misfit):
         out.zero()
         temp = self.misfit_vector(x)
         self.observable.jacobian_transpmult(x, i, self.noise_precision.dot(temp), out) # Compute the observable Jacobian transpose action at weighted misfit vector
+
+        # import matplotlib.pyplot as plt
+
+        # cbar = dl.plot(hp.vector2Function(out, self.Vh[i]))
+        # plt.colorbar(cbar)
+        # plt.show()
+        # exit()
                 
     def setLinearizationPoint(self, x: list[dl.Vector, ...], gauss_newton_approx: bool=False) -> None:
         """

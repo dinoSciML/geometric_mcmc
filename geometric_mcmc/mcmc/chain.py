@@ -34,7 +34,6 @@ class MCMC:
         proposed = self.kernel.generate_sample()
 
         current.assign_paramaeter(m0)
-
         self.kernel.init_sample(current)
 
         if self.parameters["print_level"] > 0:

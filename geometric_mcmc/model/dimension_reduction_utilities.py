@@ -50,7 +50,7 @@ def dimension_reduction_comparison(model, input_rank, output_rank, output_path, 
 
 
     if mpi_comm.rank == 0: print("Computing the derivative-informed subspace")
-    input_res, output_res, observables = compute_DIS(model, n_samples, input_rank, output_rank, burn_in=0, oversampling=20, mode="reverse", return_observables=True)
+    input_res, output_res, observables = compute_DIS(model, n_samples, input_rank, output_rank, oversampling=20, mode="reverse", return_observables=True)
     if mpi_comm.rank == 0: print("Time for computing the derivative-informed subspace: ", time.time()-t0)
     dis_input_eigenvalues, dis_input_decoder, dis_input_encoder = input_res
     dis_output_eigenvalues, dis_output_decoder, dis_output_encoder = output_res

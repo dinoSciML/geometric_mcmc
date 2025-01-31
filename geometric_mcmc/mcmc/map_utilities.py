@@ -4,15 +4,15 @@ from ..model.pto_map import PtOMapJacobian
 from .kernel_utilities import decomposeGaussNewtonHessian
 import warnings
 
-def compute_MAP(model):
+def compute_MAP(model, rel_tolerance = 1e-6):
     """
     Compute the MAP point using inexact Newton-CG method with inexact line search globalization and Gauss-Newton approximation warm start.
     """
     m = model.prior.mean.copy()
     solver = hp.ReducedSpaceNewtonCG(model)
-    solver.parameters["rel_tolerance"] = 1e-6
+    solver.parameters["rel_tolerance"] = rel_tolerance
     solver.parameters["abs_tolerance"] = 1e-12
-    solver.parameters["max_iter"] = 25
+    solver.parameters["max_iter"] = 50
     solver.parameters["GN_iter"] = 5
     solver.parameters["globalization"] = "LS"
     solver.parameters["LS"]["c_armijo"] = 1e-4

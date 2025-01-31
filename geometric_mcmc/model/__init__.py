@@ -1,4 +1,4 @@
-from .observable import Observable, PointwiseObservation
+from .observable import Observable, PointwiseObservation, VariationalQoiObservation, MultipleObservations, TimeDependentObservations
 from .observable_misfit import ObservableMisfit
 from .pto_map import PtOMapJacobian
 from .surrogate_wrapper import ReducedBasisSurrogate
