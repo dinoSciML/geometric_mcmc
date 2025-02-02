@@ -52,13 +52,15 @@ def save_mv_to_XDMF(Vh: dl.FunctionSpace, file_name: str, mv: hp.MultiVector, na
     :param name: the name to save
     """
     file = dl.XDMFFile(Vh.mesh().mpi_comm(), file_name)
+    file.parameters["functions_share_mesh"] = True
+    file.parameters["rewrite_function_mesh"] = False
     for ii in range(mv.nvec()):
         append = False if ii == 0 else True
         if normalize: mv[ii] *= 1./mv[ii].norm("linf")
         file.write_checkpoint(hp.vector2Function(mv[ii], Vh), name, ii, append=append)
     file.close()
 
-def load_mv_from_XDMF(Vh: dl.FunctionSpace, file_name: str, mv: hp.MultiVector, name: str ="") -> None:
+def load_mv_from_XDMF(Vh: dl.FunctionSpace, file_name: str, rank, name: str ="") -> None:
     """
     Save a dolfin function to an XDMF file.
     :param file_name: The XDMF file name
@@ -67,11 +69,11 @@ def load_mv_from_XDMF(Vh: dl.FunctionSpace, file_name: str, mv: hp.MultiVector, 
     """
     file = dl.XDMFFile(Vh.mesh().mpi_comm(), file_name)
     function = dl.Function(Vh)
-    file.parameters["functions_share_mesh"] = True
-    file.parameters["rewrite_function_mesh"] = False
-    for ii in range(mv.nvec()):
+    mv = hp.MultiVector(function.vector(), rank)
+    for ii in range(rank):
         mv[ii].zero()
         function.vector().zero()
         file.read_checkpoint(function, name, ii)
         mv[ii].axpy(1., function.vector())
     file.close()
+    return mv

@@ -13,16 +13,19 @@ method_list = ["pCN", "MALA", "LA-pCN", "DIS-MALA", "mMALA"]
 def model_driven_mcmc_settings(settings = {}):
     settings["method"] = "LA-pCN"       # The method to use in sampling
     settings["n_samples"] = 1000        # Number of samples for each processer
-    settings["tune_step_size"] = 0      # Whether to tune the step size
+    settings["tune_step_size"] = 0      # Whether to tune the step size. Only used in parallel MCMC run with more than one processor.
     settings["step_size_tuning"] = {}
     settings["step_size_tuning"]["step_size_max"] = 2       # The maximum step size for tuning. Used when tune_step_size is 1
     settings["step_size_tuning"]["step_size_min"] = 0.1     # The minimum step size for tuning. Used when tune_step_size is 1
     settings["step_size_tuning"]["n_samples"] = 4000 # The number of samples for tuning the step size
     settings["step_size_tuning"]["n_burn_in"] = 1000 # The burn-in period for tuning the step size
-    settings["step_size"] = 0.1         # The step size parameter in sampling
+    settings["step_size"] = 0.1         # The step size parameter in sampling. Used when tune_step_size is 0 or in serial run
     settings["DIS-MALA"] = {}
     settings["DIS-MALA"]["n_dis_samples"] = 500     # Number of samples for the DIS eigenvalue and eigenvector estimation. Only used when method is DIS-mMALA
     settings["DIS-MALA"]["parameter_rank"] = 200    # The rank of the input dimension reduction. Used for both MAP Hessian approximation and DIS-mMALA
+    settings["DIS-MALA"]["decoder_file"] = None    # The file for the decoder in the input dimension reduction if it is precomputed
+    settings["DIS-MALA"]["encoder_file"] = None    # The file for the encoder in the input dimension reduction if it is precomputed
+    settings["DIS-MALA"]["eigenvalues_file"] = None    # The file for the decoder in the input dimension reduction if it is precomputed
     settings["mMALA"] = {}
     settings["mMALA"]["gauss_newton_approximation"] = False # Whether to use Gauss-Newton approximation for the Hessian
     settings["mMALA"]["form_jacobian"] = True    # Whether to form the Jacobian matrix
@@ -64,8 +67,14 @@ def run_model_driven_mcmc(comm_sampler, model, mcmc_settings):
     elif mcmc_settings["method"] == "LA-pCN":
         kernel = gmc.gpCNKernel(model, posterior)
     elif mcmc_settings["method"] == "DIS-MALA":
-        dis_input_res = gmc.compute_DIS(model, mcmc_settings["DIS-MALA"]["n_dis_samples"], mcmc_settings["DIS-MALA"]["parameter_rank"])
-        dis_input_eigenvalues, dis_input_decoder, dis_input_encoder = dis_input_res
+        if mcmc_settings["DIS-MALA"]["decoder_file"] is not None and mcmc_settings["DIS-MALA"]["encoder_file"] is not None and mcmc_settings["DIS-MALA"]["eigenvalues_file"] is not None:
+            dis_input_decoder = gmc.load_mv_from_XDMF(Vh[hp.PARAMETER], mcmc_settings["DIS-MALA"]["decoder_file"], mcmc_settings["DIS-MALA"]["parameter_rank"])
+            dis_input_encoder = gmc.load_mv_from_XDMF(Vh[hp.PARAMETER], mcmc_settings["DIS-MALA"]["encoder_file"], mcmc_settings["DIS-MALA"]["parameter_rank"])
+            dis_input_eigenvalues = np.load(mcmc_settings["DIS-MALA"]["eigenvalues_file"])[:mcmc_settings["DIS-MALA"]["parameter_rank"]]
+            gmc.check_orthonormality(dis_input_decoder, dis_input_encoder)
+        else:
+            dis_input_res = gmc.compute_DIS(model, mcmc_settings["DIS-MALA"]["n_dis_samples"], mcmc_settings["DIS-MALA"]["parameter_rank"])
+            dis_input_eigenvalues, dis_input_decoder, dis_input_encoder = dis_input_res
         kernel = gmc.FixedmMALAKernel(model, dis_input_eigenvalues, dis_input_decoder, encoder= dis_input_encoder)
     elif mcmc_settings["method"] == "mMALA":
         kernel = gmc.mMALAKernel(model, form_jacobian=mcmc_settings["mMALA"]["form_jacobian"], 
@@ -78,7 +87,7 @@ def run_model_driven_mcmc(comm_sampler, model, mcmc_settings):
     model.prior.init_vector(m0, 0)
     model.prior.init_vector(noise, "noise")
 
-    if mcmc_settings["tune_step_size"]:
+    if mcmc_settings["tune_step_size"] and comm_sampler.size > 1:
         step_size_caniadates = np.linspace(mcmc_settings["step_size_tuning"]["step_size_min"], mcmc_settings["step_size_tuning"]["step_size_max"], comm_sampler.size)
         for ii in range(step_size_caniadates.size+1): 
             hp.parRandom.normal(1., noise)

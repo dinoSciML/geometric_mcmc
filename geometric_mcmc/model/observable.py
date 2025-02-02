@@ -69,12 +69,12 @@ class PointwiseObservation(Observable):
     """
     Class to model a pointwise observation operator.    
     """
-    def __init__(self, Vu, targets):
+    def __init__(self, Vu, targets, components=None, prune_and_sort=False):
         """
         Constructor:
             :code:`B` is the discrete pointwise observation operator in hippylib.
         """
-        self.B = hp.assemblePointwiseObservation(Vu, targets)
+        self.B = hp.assemblePointwiseObservation(Vu, targets, components, prune_and_sort)
         self.mpi_comm = self.B.mpi_comm()
         self._help_obs = dl.Vector(self.mpi_comm)
         self.B.init_vector(self._help_obs, 0)
