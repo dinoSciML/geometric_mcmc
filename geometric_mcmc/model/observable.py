@@ -388,7 +388,7 @@ class TimeDependentObservations(Observable):
         elif i != OBSERVABLE:
             help_out = out.copy()
 
-        for t, obs in zip(self.t, self.observables):
+        for t, obs in zip(self.times, self.observables):
             dim = obs.dim()
             if i == OBSERVABLE: # The output is with respect to the observable
                 if j == STATE and k == STATE:
@@ -415,13 +415,13 @@ class TimeDependentObservations(Observable):
             if k == OBSERVABLE:
                 if i == STATE and j == STATE:
                     help_out.zero()
-                    obs.apply_ijk(i, j, k, dir_k.view(t),  dir_j[start:(start+dim)], help_out) # Apply the second variation
+                    obs.apply_ijk(i, j, k, dir_j.view(t),  dir_k[start:(start+dim)], help_out) # Apply the second variation
                     out.view(t).axpy(1., help_out)
                 elif i == STATE and j != STATE:
                     help_out.zero()
-                    obs.apply_ijk(i, j, k, dir_k, dir_j[start:(start+dim)], help_out)
+                    obs.apply_ijk(i, j, k, dir_j, dir_k[start:(start+dim)], help_out)
                     out.view(t).axpy(1., help_out)
                 elif i != STATE and j == STATE:
                     help_out.zero()
-                    obs.apply_ijk(i, j, k, dir_k.view(t), dir_j[start:(start+dim)], help_out)
+                    obs.apply_ijk(i, j, k, dir_j.view(t), dir_k[start:(start+dim)], help_out)
                     out.axpy(1., help_out)

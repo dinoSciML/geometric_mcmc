@@ -22,7 +22,6 @@ class ObservableMisfit(hp.Misfit):
         self.Vh = Vh
         self.data = data
         self.noise_precision = noise_precision
-        self._help = [dl.Function(Vh[ii]).vector() for ii in range(2)]
         
     def cost(self, x: list[dl.Vector, ...]) -> float:
         """
@@ -109,6 +108,7 @@ class ObservableMisfit(hp.Misfit):
         obs_help = self.observable.jacobian_mult(self.linearization_point, j, dir) # Compute the observable Jacobian action at the input variation
         self.observable.jacobian_transpmult(self.linearization_point, i, self.noise_precision.dot(obs_help), out) # Compute the observable Jacobian transpose action at the weighted observable Jacobian action
         if not self.gauss_newton_approx: # If we are not using the Gauss--Newton approximation
-            self._help[i].zero() # Zero the help vector
-            self.observable.apply_ijk(i, j, OBSERVABLE, dir, self.weighted_misfit_vector_at_x, self._help[i]) # Compute the second variation of the cost functional and apply it to the weighted misfit vector
-            out.axpy(1., self._help[i]) # Add the second variation to the Hessian action
+            help = out.copy()
+            help.zero()
+            self.observable.apply_ijk(i, j, OBSERVABLE, dir, self.weighted_misfit_vector_at_x, help) # Compute the second variation of the cost functional and apply it to the weighted misfit vector
+            out.axpy(1., help) # Add the second variation to the Hessian action

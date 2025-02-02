@@ -60,7 +60,7 @@ class PtOMapJacobian():
                 unit_vec[ii] = 1. # Set the unit vector
                 set_global(self.mpi_comm, unit_vec, self.yhelp) # Set the unit vector to a dolfin vector
                 out[:, ii] = self.mult(self.yhelp) # Compute the Jacobian action
-            set_global_mv(self.mpi_comm, out[ii, :], jacobian_mv[ii])
+                set_global(self.mpi_comm, out[ii, :], jacobian_mv[ii])
         elif mode == "reverse": # Reverse mode differentiation
             for ii in range(self.observable.dim()): # Loop over the observable dimension
                 jacobian_mv[ii].zero() # Zero the output
