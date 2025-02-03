@@ -87,7 +87,7 @@ class FullTracer(Tracer):
         self.mpi_comm = Vm.mesh().mpi_comm()
 
         self._help = dl.Function(Vm).vector()
-        self._M = dl.assemble(dl.TestFunction(Vm)*dl.TrialFunction(Vm)*dl.dx)
+        self._M = dl.assemble(dl.inner(dl.TestFunction(Vm), dl.TrialFunction(Vm))*dl.dx)
 
         if self.mpi_comm.rank == 0 and not os.path.exists(self.output_path):
             os.makedirs(self.output_path, exist_ok=True)

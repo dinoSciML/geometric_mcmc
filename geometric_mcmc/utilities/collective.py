@@ -28,17 +28,21 @@ def get_global(comm: MPI.Intracomm, vector: dl.Vector, root: int=None) -> np.nda
 
     if size == 1:
         array = vector.get_local()
+        return array
     elif root is None:
         start, end = vector.local_range()
         sizes = np.array(comm.allgather(end-start))
         displacements = np.array([sum(sizes[:i]) for i in range(size)])
         array = np.empty(vector.size())
         comm.Allgatherv(sendbuf=vector.get_local(), recvbuf=[array, (sizes, displacements)])
+        return array
     else:
         array = comm.gather(vector.get_local(), root=root)
         if comm.rank == root:
             array = np.concatenate(array)
-    return array
+            return array
+        else:
+            return None
 
 def set_global_mv(comm: MPI.Intracomm, array: np.ndarray, mv: hp.MultiVector) -> None:
     """
@@ -63,7 +67,10 @@ def get_global_mv(comm: MPI.Intracomm, mv: hp.MultiVector, root: int=None) -> np
     out = []
     for ii in range(mv.nvec()):
         out.append(get_global(comm, mv[ii], root=root))
-    return np.stack(out)
+    if comm.rank == root:
+        return np.stack(out)
+    else:
+        return None
 
 def split_mpi_comm(comm: MPI.Intracomm, size_1: int, size_2: int) -> tuple[MPI.Intracomm, MPI.Intracomm]:
     """

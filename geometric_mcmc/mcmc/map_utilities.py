@@ -35,6 +35,7 @@ def compute_Hessian_decomposition_at_sample(model, x, gauss_newton_approx=False,
     if gauss_newton_approx and form_jacobian: # If the Gauss-Newton approximation is used and the Jacobian is formed, the directly solve the eigenvalue problem.
 
         if rank is not None: warnings.warn("The rank is specified but not used for Gauss--Newton approximation computed using Jacobian.")
+        rank = min(model.misfit.observable.dim(), x[PARAMETER].size())
         pto_map_jac = PtOMapJacobian(model.problem, model.misfit.observable)
         Rinv_operator = hp.Solver2Operator(model.prior.Rsolver)
 
@@ -45,14 +46,14 @@ def compute_Hessian_decomposition_at_sample(model, x, gauss_newton_approx=False,
         pto_map_jac.eval(J, mode = mode) # compute the Jacobian
         hp.MatMvMult(Rinv_operator, J, Rinv_J) # compute the encoder
 
-        encoder = pto_map_jac.generate_jacobian()
-        decoder = pto_map_jac.generate_jacobian()
+        encoder = hp.MultiVector(x[PARAMETER], rank)
+        decoder = hp.MultiVector(x[PARAMETER], rank)
 
-        eigenvalues = decomposeGaussNewtonHessian(J, Rinv_J, decoder, encoder, Rinv_operator, model.misfit.noise_precision) # compute the eigenvalues and eigenvectors
+        eigenvalues = decomposeGaussNewtonHessian(J, Rinv_J, decoder, encoder, model.prior, model.misfit.noise_precision, oversampling=oversampling) # compute the eigenvalues and eigenvectors
     
     else:
         if gauss_newton_approx:
-            rank = model.misfit.observable.dim()
+            rank = min(model.misfit.observable.dim(), x[PARAMETER].size())
         assert rank is not None, "The rank must be specified if the Gauss-Newton approximation is not used."
         model.setPointForHessianEvaluations(x, gauss_newton_approx)
         Hmisfit = hp.ReducedHessian(model, misfit_only=True) # compute the Hessian approximation

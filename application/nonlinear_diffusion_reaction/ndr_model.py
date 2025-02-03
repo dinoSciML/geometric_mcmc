@@ -186,3 +186,32 @@ def true_parameter(prior, random = True):
         mtrue_func = dl.interpolate(mtrue_expression, prior.Vh)
         return mtrue_func.vector()
     
+if  __name__=="__main__":
+
+    from mpi4py import MPI
+    settings = nonlinear_diffusion_reaction_settings()
+    comm = MPI.COMM_WORLD
+    model, _ = nonlinear_diffusion_reaction_model(comm, settings)
+    print("Model setup completed.")
+
+    x_MAP = gmc.compute_MAP(model)
+    map_eigenvalues, map_decoder, map_encoder = gmc.compute_Hessian_decomposition_at_sample(model, x_MAP, gauss_newton_approx=True, form_jacobian=True, mode="reverse")
+    plt.figure(0)
+    dl.plot(hp.vector2Function(map_decoder[0], model.problem.Vh[hp.PARAMETER]))
+    plt.figure(1)
+    dl.plot(hp.vector2Function(map_decoder[24], model.problem.Vh[hp.PARAMETER]))
+    plt.figure(2)
+    plt.semilogy(map_eigenvalues, "o")
+    plt.xlabel("Index")
+    plt.ylabel("Eigenvalues")
+
+    map_eigenvalues, map_decoder, map_encoder = gmc.compute_Hessian_decomposition_at_sample(model, x_MAP, gauss_newton_approx=True, form_jacobian=False, oversampling = 200)
+    plt.figure(3)
+    dl.plot(hp.vector2Function(map_decoder[0], model.problem.Vh[hp.PARAMETER]))
+    plt.figure(4)
+    dl.plot(hp.vector2Function(map_decoder[24], model.problem.Vh[hp.PARAMETER]))
+    plt.figure(5)
+    plt.semilogy(map_eigenvalues, "o")
+    plt.xlabel("Index")
+    plt.ylabel("Eigenvalues")
+    plt.show()

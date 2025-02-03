@@ -148,7 +148,7 @@ class mMALAKernel(Kernel):
             J.reduce(s.g, weighted_misfit_vector) # compute the gradient
             s.Cg.zero()
             Rinv_J.reduce(s.Cg, weighted_misfit_vector) # compute the preconditioned gradient
-            s.eigenvalues = decomposeGaussNewtonHessian(J, Rinv_J, s.decoder, s.encoder, self._Rinv_operator, self.model.misfit.noise_precision) # compute the eigenvalues and eigenvectors
+            s.eigenvalues = decomposeGaussNewtonHessian(J, Rinv_J, s.decoder, s.encoder, self.model.prior, self.model.misfit.noise_precision, oversampling=self.parameters["oversampling"]) # compute the eigenvalues and eigenvectors
         else: # use randomized eigendecomposition of the Hessian using a matrix free approach
             self.model.solveAdj(s.p, [s.u, s.m, s.p]) # solve the adjoint problem
             self.model.setPointForHessianEvaluations([s.u, s.m, s.p], gauss_newton_approx=self.parameters["Gauss_Newton_approximation"]) # set the point for Hessian evaluations
@@ -270,6 +270,8 @@ class mMALAKernel(Kernel):
         Consume random numbers for the kernel
         """
         hp.parRandom.normal(1., self._noise)
+        Omega = hp.MultiVector(self._help1, self.parameters["hessian_rank"] + self.parameters["oversampling"])
+        hp.parRandom.normal(1., Omega)
         np.random.rand()
         if hasattr(self.model, "consume_random") and callable(getattr(self.model, "consume_random")):
             self.model.consume_random()
