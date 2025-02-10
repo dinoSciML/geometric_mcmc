@@ -68,15 +68,8 @@ class ObservableMisfit(hp.Misfit):
         if self.data is None:
             raise ValueError("Data must be specified")
         out.zero()
-        temp = self.misfit_vector(x)
-        self.observable.jacobian_transpmult(x, i, self.noise_precision.dot(temp), out) # Compute the observable Jacobian transpose action at weighted misfit vector
-
-        # import matplotlib.pyplot as plt
-
-        # cbar = dl.plot(hp.vector2Function(out, self.Vh[i]))
-        # plt.colorbar(cbar)
-        # plt.show()
-        # exit()
+        temp = self.misfit_vector(x, weighted=True)
+        self.observable.jacobian_transpmult(x, i, temp, out) # Compute the observable Jacobian transpose action at weighted misfit vector
                 
     def setLinearizationPoint(self, x: list[dl.Vector, ...], gauss_newton_approx: bool=False) -> None:
         """

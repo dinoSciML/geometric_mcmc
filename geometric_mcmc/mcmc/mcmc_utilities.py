@@ -95,13 +95,13 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
 
         if flag_reduced: # Check if the kernel is a reduced kernel with numpy data structure
             tracer = ReducedTracer(model.problem.Vh[PARAMETER], output_path=output_path + "size_%d/"%(comm_sampler.rank))
-            tracer.parameters["visual_frequency"] = n_samples // 4
-            tracer.parameters["save_frequency"] = n_samples // 4
+            tracer.parameters["visual_frequency"] = n_samples // 20
+            tracer.parameters["save_frequency"] = n_samples // 20
             tracer.parameters["moving_average_window"] = n_samples//10
         else: # Create a full tracer object
             tracer = FullTracer(model.problem.Vh[PARAMETER], output_path=output_path + "size_%d/"%(comm_sampler.rank))
-            tracer.parameters["visual_frequency"] = n_samples // 4
-            tracer.parameters["save_frequency"] = n_samples // 4
+            tracer.parameters["visual_frequency"] = n_samples // 20
+            tracer.parameters["save_frequency"] = n_samples // 20
             tracer.parameters["moving_average_window"] = n_samples//10
 
         time0 = time.time() # Start the timer
