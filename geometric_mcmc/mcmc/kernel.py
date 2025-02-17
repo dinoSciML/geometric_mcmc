@@ -94,14 +94,16 @@ class mMALAKernel(Kernel):
         self.parameters["h"] = 0.1
         self.parameters["oversampling"] = 20
         self.form_jacobian = form_jacobian
-        if not self.form_jacobian:
+        if self.form_jacobian:
             self.parameters["hessian_rank"] = min(self.model.misfit.observable.dim(), self._help1.size())
             self.parameters["gauss_newton_approximation"] = True
+            self._Rinv_operator = hp.Solver2Operator(self.model.prior.Rsolver)
+            self.pto_map_jac = PtOMapJacobian(self.model.problem, self.model.misfit.observable)
+            self.jac_mode = mode
         else:
             self.mode = mode
             self.parameters["hessian_rank"] = None # The rank of the Hessian approximation must be set by the user
-            self._Rinv_operator = hp.Solver2Operator(self.model.prior.Rsolver)
-            self.pto_map_jac = PtOMapJacobian(self.model.problem, self.model.misfit.observable)
+            self.parameters["gauss_newton_approximation"] = False
 
     def name(self) -> str:
         """
@@ -125,10 +127,7 @@ class mMALAKernel(Kernel):
         """
         Generate a sample data structure
         """
-        if self.form_jacobian:
-            return SampleStruct(self.model, self.derivativeInfo(), self.model.misfit.observable.dim())
-        else:
-            return SampleStruct(self.model, self.derivativeInfo(), self.parameters["hessian_rank"])
+        return SampleStruct(self.model, self.derivativeInfo(), self.parameters["hessian_rank"])
 
     def init_sample(self, s: SampleStruct) -> None:
         """
@@ -141,7 +140,7 @@ class mMALAKernel(Kernel):
             J = self.pto_map_jac.generate_jacobian() # generate the Jacobian multivector
             Rinv_J = self.pto_map_jac.generate_jacobian() # compute the prior preconditioned Jacobian
             self.pto_map_jac.setLinearizationPoint([s.u, s.m, None]) # set the linearization point
-            self.pto_map_jac.eval(J, mode = self.mode) # compute the Jacobian
+            self.pto_map_jac.eval(J, mode = self.jac_mode) # compute the Jacobian
             hp.MatMvMult(self._Rinv_operator, J, Rinv_J) # compute the encoder
             weighted_misfit_vector = self.model.misfit.misfit_vector([s.u, s.m, None], True) # compute the weighted misfit vector
             s.g.zero()
@@ -151,7 +150,7 @@ class mMALAKernel(Kernel):
             s.eigenvalues = decomposeGaussNewtonHessian(J, Rinv_J, s.decoder, s.encoder, self.model.prior, self.model.misfit.noise_precision, oversampling=self.parameters["oversampling"]) # compute the eigenvalues and eigenvectors
         else: # use randomized eigendecomposition of the Hessian using a matrix free approach
             self.model.solveAdj(s.p, [s.u, s.m, s.p]) # solve the adjoint problem
-            self.model.setPointForHessianEvaluations([s.u, s.m, s.p], gauss_newton_approx=self.parameters["Gauss_Newton_approximation"]) # set the point for Hessian evaluations
+            self.model.setPointForHessianEvaluations([s.u, s.m, s.p], gauss_newton_approx=self.parameters["gauss_Newton_approximation"]) # set the point for Hessian evaluations
             Hmisfit = hp.ReducedHessian(self.model, misfit_only=True) # compute the Hessian approximation
             assert self.parameters["hessian_rank"] is not None, "The rank of the Hessian approximation must be set."
             Omega = hp.MultiVector(s.m, self.parameters["hessian_rank"] + self.parameters["oversampling"]) # initialize the multivector

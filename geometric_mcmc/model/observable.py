@@ -125,7 +125,6 @@ class VariationalQoiObservation(Observable):
         self.Vh = Vh
         self.mpi_comm = self.Vh[PARAMETER].mesh().mpi_comm()
         self.qoi_varf = qoi_varf
-        self._help = [dl.Function(self.Vh[i]).vector() for i in [STATE, PARAMETER]]
         self.L = {}
         if isinstance(bc0, dl.DirichletBC):
             self.bc0 = [bc0]
@@ -172,9 +171,10 @@ class VariationalQoiObservation(Observable):
         :param dir: the input variation (:code:`dolfin.Vector`) for the Jacobian action evaluation
         Note that the adjoint variable is not used in the qoi evaluation.
         """
-        self._help[i].zero()
-        self.grad(i, x, self._help[i])
-        return np.array([self._help[i].inner(dir)])
+        help = dir.copy()
+        help.zero()
+        self.grad(i, x, help)
+        return np.array([help.inner(dir)])
 
     def jacobian_transpmult(self, x, i, dir, out):
         """
@@ -186,9 +186,8 @@ class VariationalQoiObservation(Observable):
         Note that the adjoint variable is not used in the qoi evaluation.
         """
         out.zero()
-        self._help[i].zero()
-        self.grad(i, x, self._help[i])
-        out.axpy(dir[0], self._help[i])
+        self.grad(i, x, out)
+        out *= dir[0]
     
     def setLinearizationPoint(self, x):
         """
@@ -210,24 +209,27 @@ class VariationalQoiObservation(Observable):
         Apply the second variation :math:`\delta_{ijk}` (:code:`i,j,k = STATE,PARAMETER,OBSERVABLE`) of the cost in direction :code:`dir_j` and :code:`dir_k`.
         """
         if j == OBSERVABLE: # The direction j is with respect to the observable
+            out.zero()
             if (i, k) in self.L:
                 self.L[i, k].mult(dir_k, out)
             else:
                 self.L[k, i].transpmult(dir_k, out)
             out *= dir_j[0]
         elif k == OBSERVABLE: # The direction k is with respect to the observable
+            out.zero()
             if (i, j) in self.L:
                 self.L[i, j].mult(dir_j, out) # H_ij
             else:
                 self.L[j, i].transpmult(dir_j, out) # H_ji=H_ij^T
             out *= dir_k[0]
         elif i == OBSERVABLE: # The output is with respect to the observable
-            self._help[j].zero()
+            help = dir_j.copy()
+            help.zero()
             if (j, k) in self.L:
-                self.L[j, k].mult(dir_k, self._help[j]) # H_jk
+                self.L[j, k].mult(dir_k, help) # H_jk
             else:
-                self.L[k, j].transpmult(dir_k, self._help[j]) # H_kj=H_jk^T
-            out = np.array([self._help[j].inner(dir_j)]) 
+                self.L[k, j].transpmult(dir_k, help) # H_kj=H_jk^T
+            out = np.array([help.inner(dir_j)]) 
         if i == STATE:
             [bc.apply(out) for bc in self.bc0]
 
@@ -279,12 +281,12 @@ class MultipleObservations(Observable):
         """
         start = 0
         out.zero()
-        self._help = out.copy()
+        help = out.copy()
         for obs in self.observables:
             dim = obs.dim()
-            self._help.zero()
-            obs.jacobian_transpmult(x, i, dir[start:(start+dim)], self._help)
-            out.axpy(1., self._help)
+            help.zero()
+            obs.jacobian_transpmult(x, i, dir[start:(start+dim)], help)
+            out.axpy(1., help)
             start += dim
     
     def setLinearizationPoint(self, x):
@@ -300,6 +302,7 @@ class MultipleObservations(Observable):
         """
         start = 0
         if i != OBSERVABLE:
+            out.zero()
             help_out = out.copy()
         for obs in self.observables:
             dim = obs.dim()
@@ -365,14 +368,17 @@ class TimeDependentObservations(Observable):
     def jacobian_transpmult(self, x, i, dir, out):
         start = 0
         out.zero()
+        if i == STATE:
+            help_out = out.view(self.times[0]).copy()
+        elif i == PARAMETER:
+            help_out = out.copy()
+        else:
+            raise IndexError("The variable to differentiate with respect to must be either STATE or PARAMETER")
         for t, obs in zip(self.times, self.observables):
             dim = obs.dim()
-            if i == STATE:
-                obs.jacobian_transpmult([x[STATE].view(t), x[PARAMETER]], i, dir[start:(start+dim)], out.view(t))
-            elif i == PARAMETER:
-                obs.jacobian_transpmult([x[STATE].view(t), x[PARAMETER]], i, dir[start:(start+dim)], out)
-            else:
-                raise IndexError("The variable to differentiate with respect to must be either STATE or PARAMETER")
+            help_out.zero()
+            obs.jacobian_transpmult([x[STATE].view(t), x[PARAMETER]], i, dir[start:(start+dim)], help_out)
+            out.view(t).axpy(1., help_out) if i == STATE else out.axpy(1., help_out)
             start += dim
     
     def setLinearizationPoint(self, x):
@@ -383,11 +389,12 @@ class TimeDependentObservations(Observable):
     def apply_ijk(self, i, j, k, dir_j, dir_k, out):
 
         start = 0
-        if i == STATE:
+        if i==STATE:
+            out.zero()
             help_out = out.view(self.times[0]).copy()
-        elif i != OBSERVABLE:
+        elif i==PARAMETER:
+            out.zero()
             help_out = out.copy()
-
         for t, obs in zip(self.times, self.observables):
             dim = obs.dim()
             if i == OBSERVABLE: # The output is with respect to the observable
@@ -412,6 +419,10 @@ class TimeDependentObservations(Observable):
                     help_out.zero()
                     obs.apply_ijk(i, j, k, dir_j[start:(start+dim)], dir_k.view(t), help_out)
                     out.axpy(1., help_out)
+                else:
+                    help_out.zero()
+                    obs.apply_ijk(i, j, k, dir_j[start:(start+dim)], dir_k, help_out)
+                    out.axpy(1., help_out)
             if k == OBSERVABLE:
                 if i == STATE and j == STATE:
                     help_out.zero()
@@ -425,3 +436,8 @@ class TimeDependentObservations(Observable):
                     help_out.zero()
                     obs.apply_ijk(i, j, k, dir_j.view(t), dir_k[start:(start+dim)], help_out)
                     out.axpy(1., help_out)
+                else:
+                    help_out.zero()
+                    obs.apply_ijk(i, j, k, dir_j, dir_k[start:(start+dim)], help_out)
+                    out.axpy(1., help_out)
+            start += dim

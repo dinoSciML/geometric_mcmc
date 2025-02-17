@@ -98,6 +98,7 @@ class ObservableMisfit(hp.Misfit):
         if self.data is None:
             raise ValueError("Data must be specified")
         # Here we compute the positive definite part of the Hessian
+        out.zero()
         obs_help = self.observable.jacobian_mult(self.linearization_point, j, dir) # Compute the observable Jacobian action at the input variation
         self.observable.jacobian_transpmult(self.linearization_point, i, self.noise_precision.dot(obs_help), out) # Compute the observable Jacobian transpose action at the weighted observable Jacobian action
         if not self.gauss_newton_approx: # If we are not using the Gauss--Newton approximation
