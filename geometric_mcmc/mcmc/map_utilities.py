@@ -20,7 +20,7 @@ def compute_MAP(model, rel_tolerance = 1e-6):
     x_MAP = solver.solve([None, m, None])
     return x_MAP
 
-def compute_Hessian_decomposition_at_sample(model, x, gauss_newton_approx=False, form_jacobian=True, mode="reverse", rank=None, oversampling=20):
+def compute_Hessian_decomposition_at_sample(model, x, gauss_newton_approx=True, form_jacobian=True, mode="reverse", rank=None, oversampling=20):
     """
     Compute the Hessian decomposition of the model at the MAP point.
     :param model: The hippylib model class with ObservableMisfit

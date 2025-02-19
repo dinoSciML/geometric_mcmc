@@ -88,7 +88,7 @@ def run_model_driven_mcmc(comm_sampler, model, mcmc_settings):
     model.prior.init_vector(noise, "noise")
 
     if mcmc_settings["tune_step_size"] and comm_sampler.size > 1:
-        step_size_caniadates = np.linspace(mcmc_settings["step_size_tuning"]["step_size_min"], mcmc_settings["step_size_tuning"]["step_size_max"], comm_sampler.size)
+        step_size_caniadates = np.exp(np.linspace(np.log(mcmc_settings["step_size_tuning"]["step_size_min"]), np.log(mcmc_settings["step_size_tuning"]["step_size_max"]), comm_sampler.size))
         for ii in range(step_size_caniadates.size+1): 
             hp.parRandom.normal(1., noise)
         posterior.sample(noise, m_prior, m0, add_mean=True)
