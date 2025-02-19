@@ -88,7 +88,7 @@ def dimension_reduction_comparison(model, input_rank, output_rank, output_path, 
     pod_output_encoder = pod_output_decoder.T@model.misfit.noise_precision
 
     np.save(output_path + "pod_output_encoder", pod_output_encoder)
-    np.save(output_path + "pod_ioutput_decoder", pod_output_decoder)
+    np.save(output_path + "pod_output_decoder", pod_output_decoder)
     np.save(output_path + "pod_output_eigenvalues", pod_output_eigenvalues)
     if mpi_comm.rank == 0:
         plt.figure(figsize=(5,4))
