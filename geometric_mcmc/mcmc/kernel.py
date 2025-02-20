@@ -256,8 +256,7 @@ class mMALAKernel(Kernel):
         dplus1 = origin.eigenvalues + 1.0
         rate = np.zeros(5)
         rate[0] = -0.125 * h * (np.inner(dplus1inv * (origin.eigenvalues * VtRm), origin.eigenvalues * VtRm) \
-                                - np.inner(origin.eigenvalues * dplus1inv * Vtg, Vtg) \
-                                - np.inner(2*origin.eigenvalues * dplus1inv * Vtg, VtRm) \
+                                - np.inner(origin.eigenvalues * dplus1inv * Vtg, VtRm) \
                                 + origin.g.inner(origin.Cg))
         rate[1] = 0.5 * math.sqrt(h) * (np.inner(VtRmhat, origin.eigenvalues * VtRm) - self._help1.inner(origin.g))
         rate[2] = -0.5 * (np.inner(VtRmhat, origin.eigenvalues * VtRmhat))

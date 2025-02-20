@@ -23,7 +23,7 @@ def find_first_valley(arr):
     return out[0]+1 if out.size > 0 else arr.size
 
 def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_path, 
-                     m0 = None, n_burn_in = None, qoi = None, verbose = False):
+                     m0 = None, n_burn_in = None, qoi = None, verbose = False, output_frequency=100):
     """
     A function to tune the step size for the MCMC step size for the given kernel.
     :param comm_sampler: The MPI communicator for the sampler. Should have the same size as the number of step sizes
@@ -36,6 +36,7 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
     :param n_burn_in: The burn-in period. If None, half of the total samples will be used
     :param qoi: The quantity of interest object.
     :param verbose: The verbosity flag
+    :param output_frequency: The frequency to save the data
     :return: The tuned step size
     """
     comm_mesh = model.prior.R.mpi_comm() # Get the MPI communicator for the mesh
@@ -95,14 +96,11 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
 
         if flag_reduced: # Check if the kernel is a reduced kernel with numpy data structure
             tracer = ReducedTracer(model.problem.Vh[PARAMETER], output_path=output_path + "size_%d/"%(comm_sampler.rank))
-            tracer.parameters["visual_frequency"] = n_samples // 20
-            tracer.parameters["save_frequency"] = n_samples // 20
-            tracer.parameters["moving_average_window"] = n_samples//10
         else: # Create a full tracer object
             tracer = FullTracer(model.problem.Vh[PARAMETER], output_path=output_path + "size_%d/"%(comm_sampler.rank))
-            tracer.parameters["visual_frequency"] = n_samples // 20
-            tracer.parameters["save_frequency"] = n_samples // 20
-            tracer.parameters["moving_average_window"] = n_samples//10
+        tracer.parameters["visual_frequency"] = output_frequency
+        tracer.parameters["save_frequency"] = output_frequency
+        tracer.parameters["moving_average_window"] = min(100, n_samples//2)
 
         time0 = time.time() # Start the timer
         chain.run(m0, qoi=qoi, tracer=tracer) # Run the MCMC chain

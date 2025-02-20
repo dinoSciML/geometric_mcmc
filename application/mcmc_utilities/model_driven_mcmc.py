@@ -11,8 +11,8 @@ from mpi4py import MPI
 method_list = ["pCN", "MALA", "LA-pCN", "DIS-MALA", "mMALA"]
 
 def model_driven_mcmc_settings(settings = {}):
-    settings["method"] = "LA-pCN"       # The method to use in sampling
-    settings["n_samples"] = 1000        # Number of samples for each processer
+    settings["method"] = "mMALA"       # The method to use in sampling
+    settings["n_samples"] = 5000        # Number of samples for each processer
     settings["tune_step_size"] = 0      # Whether to tune the step size. Only used in parallel MCMC run with more than one processor.
     settings["step_size_tuning"] = {}
     settings["step_size_tuning"]["step_size_max"] = 2       # The maximum step size for tuning. Used when tune_step_size is 1
@@ -34,7 +34,7 @@ def model_driven_mcmc_settings(settings = {}):
     settings["laplace_approximation_rank"] = 200    # The rank of the input dimension reduction. Used MAP Hessian approximation
     settings["n_subdomains"] = 1        # The size of the mesh MPI communicator
     settings["output_path"] = "./" + settings["method"] + "_results/" # The output path for saving
-    settings["output_frequency"] = 500  # The number of samples for saving
+    settings["output_frequency"] = 100  # The number of samples for saving
     settings["verbose"] = 0             # whether to print the information
     settings["qoi_index"] = [0, -1]         # The index of observables to track as qoi during MCMC
     return settings
@@ -78,9 +78,7 @@ def run_model_driven_mcmc(comm_sampler, model, mcmc_settings):
         kernel = gmc.FixedmMALAKernel(model, dis_input_eigenvalues, dis_input_decoder, encoder= dis_input_encoder)
     elif mcmc_settings["method"] == "mMALA":
         kernel = gmc.mMALAKernel(model, form_jacobian=mcmc_settings["mMALA"]["form_jacobian"], 
-                                 mode=mcmc_settings["mMALA"]["jacobian_mode"], 
-                                 rank=mcmc_settings["mMALA"]["parameter_rank"], 
-                                 gauss_newton_approximation=mcmc_settings["mMALA"]["gauss_newton_approximation"])
+                                 mode=mcmc_settings["mMALA"]["jacobian_mode"])
 
     noise, m_prior, m0 = dl.Vector(comm_mesh), dl.Vector(comm_mesh), dl.Vector(comm_mesh)
     model.prior.init_vector(m_prior, 0)

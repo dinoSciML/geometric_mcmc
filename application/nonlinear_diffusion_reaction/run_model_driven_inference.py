@@ -23,9 +23,9 @@ import pickle
 
 if __name__ == "__main__":
     settings = model_driven_mcmc_settings()
-    settings["method"] = "DIS-MALA"       # The method to use in sampling. Can be "pCN", "MALA", "LA-pCN", "DIS-MALA", "mMALA"
+    settings["method"] = "mMALA"       # The method to use in sampling. Can be "pCN", "MALA", "LA-pCN", "DIS-MALA", "mMALA"
     settings["n_samples"] = 10000        # Number of samples for each processer
-    settings["tune_step_size"] = 1      # Whether to tune the step size
+    settings["tune_step_size"] = 0      # Whether to tune the step size
     settings["step_size_tuning"]["step_size_max"] = 2       # The maximum step size for tuning. Used when tune_step_size is 1
     settings["step_size_tuning"]["step_size_min"] = 0.1     # The minimum step size for tuning. Used when tune_step_size is 1
     settings["step_size_tuning"]["n_samples"] = 4000 # The number of samples for tuning the step size
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     settings["laplace_approximation_rank"] = 200    # The rank of the input dimension reduction. Used MAP Hessian approximation
     settings["n_subdomains"] = 1        # The size of the mesh MPI communicator
     settings["output_path"] = "./" + settings["method"] + "_results/" # The output path for saving
-    settings["output_frequency"] = 500  # The number of samples for saving
+    settings["output_frequency"] = 100  # The number of samples for saving
     settings["verbose"] = 0             # whether to print the information
     settings["qoi_index"] = [0, -1]         # The index of observables to track as qoi during MCMC
 
