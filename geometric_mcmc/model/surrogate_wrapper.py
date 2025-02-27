@@ -56,7 +56,7 @@ def check_scaled_identity(mat):
 try:
     class PyTorchSurrogateModel(ReducedBasisSurrogate):
         def __init__(self, neural_network: torch.nn.Module, input_dim: int = None, output_dim: int = None, 
-                     data: np.ndarray = None, noise_precision: np.ndarray=None, output_decoder: np.ndarray = None, device: str = "cpu") -> None:
+                     data: np.ndarray = None, noise_precision: np.ndarray=None, output_decoder: np.ndarray = None, device: str = "cpu", dtype=torch.float32) -> None:
             """
             Constructor:
             :param neural_network: The PyTorch neural network model.
@@ -66,10 +66,11 @@ try:
             :param noise_precision: The noise precision matrix (same number of colimns and rows as neural network output).
             :param output_decoder: The output decoder matrix.
             :param device: The device to run the model.
+            :param dtype: The data type.
             """
             self.neural_network = neural_network
-            self.noise_precision = noise_precision
             self.device = device
+            self.dtype = dtype
             self.neural_network.to(self.device)
             self.input_dim = input_dim
             self.output_dim = output_dim
@@ -106,7 +107,7 @@ try:
                 expanded = True
             else: expanded = False
 
-            mr = torch.from_numpy(mr).to(dtype=torch.float32, device=self.device) # Convert the numpy array to torch tensor
+            mr = torch.from_numpy(mr).to(dtype=self.dtype, device=self.device) # Convert the numpy array to torch tensor
 
             if derivative_order > 0: # If we need to compute the derivatives
                 mr = mr.requires_grad_(True) # Set the requires_grad flag to True

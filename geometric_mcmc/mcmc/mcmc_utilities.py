@@ -79,7 +79,7 @@ def step_size_tuning(comm_sampler, model, kernel, step_sizes, n_samples, output_
 
         chain.parameters["number_of_samples"] = n_samples  # The total number of samples
         chain.parameters["print_progress"] = 20  # The number of time to print to screen
-        chain.parameters["print_level"] = -1 # The level to print to screen, -1 means no print
+        chain.parameters["print_level"] = 1 if verbose else -1 # The level to print to screen, -1 means no print
 
         noise = dl.Vector(comm_mesh) # Create a dolfin vector for the noise
         model.prior.init_vector(noise, "noise") # Initialize the noise vector

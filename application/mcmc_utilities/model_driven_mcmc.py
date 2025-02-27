@@ -17,8 +17,10 @@ def model_driven_mcmc_settings(settings = {}):
     settings["step_size_tuning"] = {}
     settings["step_size_tuning"]["step_size_max"] = 2       # The maximum step size for tuning. Used when tune_step_size is 1
     settings["step_size_tuning"]["step_size_min"] = 0.1     # The minimum step size for tuning. Used when tune_step_size is 1
-    settings["step_size_tuning"]["n_samples"] = 4000 # The number of samples for tuning the step size
-    settings["step_size_tuning"]["n_burn_in"] = 1000 # The burn-in period for tuning the step size
+    settings["step_size_tuning"]["n_samples"] = 4000 # The number of samples for tuning the step size. Used when tune_step_size is 1
+    settings["step_size_tuning"]["n_burn_in"] = 1000 # The burn-in period for tuning the step size. Used when tune_step_size is 1
+    settings["step_size_tuning"]["output_frequency"] = 100 # The frequency for saving the step size tuning data. Used when tune_step_size is 1
+    settings["step_size_tuning"]["verbose"] = 0 # whether to print progress to screen. Used when tune_step_size is 1.
     settings["step_size"] = 0.1         # The step size parameter in sampling. Used when tune_step_size is 0 or in serial run
     settings["DIS-MALA"] = {}
     settings["DIS-MALA"]["n_dis_samples"] = 500     # Number of samples for the DIS eigenvalue and eigenvector estimation. Only used when method is DIS-mMALA
@@ -94,7 +96,8 @@ def run_model_driven_mcmc(comm_sampler, model, mcmc_settings):
         tuned_step_size = gmc.step_size_tuning(comm_sampler, model, kernel, step_size_caniadates, 
                                                 mcmc_settings["step_size_tuning"]["n_samples"], mcmc_settings["output_path"],
                                                 n_burn_in=mcmc_settings["step_size_tuning"]["n_burn_in"], 
-                                                m0=m0)
+                                                m0=m0, verbose=mcmc_settings["step_size_tuning"]["verbose"],
+                                                output_frequency=mcmc_settings["step_size_tuning"]["output_frequency"])
         kernel.parameters["h"] = tuned_step_size
     else:
         kernel.parameters["h"] = mcmc_settings["step_size"]

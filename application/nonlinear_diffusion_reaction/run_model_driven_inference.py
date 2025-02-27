@@ -25,11 +25,13 @@ if __name__ == "__main__":
     settings = model_driven_mcmc_settings()
     settings["method"] = "mMALA"       # The method to use in sampling. Can be "pCN", "MALA", "LA-pCN", "DIS-MALA", "mMALA"
     settings["n_samples"] = 10000        # Number of samples for each processer
-    settings["tune_step_size"] = 0      # Whether to tune the step size
+    settings["tune_step_size"] = 1      # Whether to tune the step size
     settings["step_size_tuning"]["step_size_max"] = 2       # The maximum step size for tuning. Used when tune_step_size is 1
     settings["step_size_tuning"]["step_size_min"] = 0.1     # The minimum step size for tuning. Used when tune_step_size is 1
-    settings["step_size_tuning"]["n_samples"] = 4000 # The number of samples for tuning the step size
-    settings["step_size_tuning"]["n_burn_in"] = 1000 # The burn-in period for tuning the step size
+    settings["step_size_tuning"]["n_samples"] = 400 # The number of samples for tuning the step size
+    settings["step_size_tuning"]["n_burn_in"] = 100 # The burn-in period for tuning the step size
+    settings["step_size_tuning"]["output_frequency"] = 100 # The frequency for saving the step size tuning data. Used when tune_step_size is 1
+    settings["step_size_tuning"]["verbose"] = 0 # whether to print progress to screen. Used when tune_step_size is 1.
     settings["step_size"] = 0.1         # The step size parameter in sampling
     settings["DIS-MALA"]["n_dis_samples"] = 500     # Number of samples for the DIS eigenvalue and eigenvector estimation. Only used when method is DIS-mMALA
     settings["DIS-MALA"]["parameter_rank"] = 200    # The rank of the input dimension reduction. Used for both MAP Hessian approximation and DIS-mMALA
